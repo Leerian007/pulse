@@ -1,0 +1,101 @@
+name: learning_flutter
+description: "Pulse — 极简风格的轻量社区 App（Flutter + Riverpod 3 + go_router）。"
+# 防止误发布到 pub.dev；本工程是私有应用。
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  # go_router 18.x 要求 Dart >= 3.12 / Flutter >= 3.44。
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # CupertinoIcons 字体。HIG 风格下大量使用，必装。
+  cupertino_icons: ^1.0.8
+
+  # ── 状态管理：Riverpod 3 ────────────────────────────────────────
+  # 选它的理由（对比 Provider / BLoC）：
+  #  · 心智负担适中：一个 provider 就是一个可监听的"单元"，没有 store/event/state 三件套；
+  #  · 编译期安全：不存在 Provider 那样"运行时找不到 provider"的问题；
+  #  · 天生处理 loading / error：`AsyncValue` 把三态建模成一个 sealed 类型，
+  #    UI 侧用 switch 模式匹配穷尽处理，漏掉分支会编译报错；
+  #  · 可测试：override 一个 provider 就能替换整条依赖链。
+  #
+  # 刻意**只**引 flutter_riverpod，不引 riverpod_annotation / riverpod_generator：
+  # 于是不需要 build_runner，没有代码生成步骤，`flutter run` 就是全部。
+  # 想要 `@riverpod` 注解风格时再加那三件套（见 dev_dependencies 里的注释）。
+  flutter_riverpod: ^3.4.3
+
+  # ── 路由：go_router ─────────────────────────────────────────────
+  # 用 `StatefulShellRoute.indexedStack` 实现"每个 Tab 独立导航栈"，
+  # 这是当前 Flutter 生态里做底部导航最干净的方案。
+  go_router: ^18.0.2
+
+  # ── 本地化 ──────────────────────────────────────────────────────
+  # 提供 GlobalCupertinoLocalizations。必要：MaterialApp **不会**
+  # 默认注入 CupertinoLocalizations，而 CupertinoSliverNavigationBar /
+  # CupertinoTextField / CupertinoSliverRefreshControl 都会读它。
+  flutter_localizations:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # 官方推荐规则集（基于 package:lints 的 recommended）。
+  flutter_lints: ^6.0.0
+
+  # ── 可选：按需取消注释 ────────────────────────────────────────────
+  #
+  # 1) Riverpod 静态检查：能在编译期抓出"忘记 dispose""在 build 里写 ref.read"
+  #    这类问题，强烈建议加。
+  # custom_lint: ^0.8.0
+  # riverpod_lint: ^3.4.3
+  #
+  # 2) 代码生成风格：把上面的 flutter_riverpod 换成下面三个，
+  #    就能用 `@riverpod` 注解，省掉手写 provider 的样板。
+  #    （注意：flutter_riverpod 本身仍然需要，它被 riverpod_annotation 依赖）
+  # riverpod_annotation: ^3.4.3
+  # riverpod_generator: ^3.4.3
+  # build_runner: ^2.4.13
+  #
+  # 3) 不可变模型 + 自动 copyWith / fromJson。
+  #    现阶段 Mock 数据用不到 JSON，所以实体是手写的普通类。
+  # freezed_annotation: ^2.4.4
+  # json_annotation: ^4.9.0
+  # freezed: ^2.5.7
+  # json_serializable: ^6.9.0
+  #
+  # 4) 测试
+  # mocktail: ^1.0.4
+  # golden_toolkit: ^0.15.0
+
+flutter:
+  # 引入 Material Icons 字体（错误页等少数地方用到 Material 图标）。
+  uses-material-design: true
+
+  # ── 字体（可选）────────────────────────────────────────────────
+  # 默认**不配置字体**：Flutter 会走平台默认，在 iOS / macOS 上就是
+  # San Francisco —— 这才是最正宗的 SF Pro，而且是系统级优化过的字重映射。
+  #
+  # 如果要在 Android / Web 上也得到接近的观感，把 Inter 放进
+  # assets/fonts/ 并取消下面的注释。AppTypography 已经把 'Inter'
+  # 放进 fontFamilyFallback 兜底链，配好即可自动生效。
+  #
+  # fonts:
+  #   - family: Inter
+  #     fonts:
+  #       - asset: assets/fonts/Inter-Regular.ttf
+  #         weight: 400
+  #       - asset: assets/fonts/Inter-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/Inter-SemiBold.ttf
+  #         weight: 600
+  #       - asset: assets/fonts/Inter-Bold.ttf
+  #         weight: 700
+
+  # assets:
+  #   - assets/images/
