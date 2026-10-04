@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/date_format.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/widgets/pressable.dart';
 import '../../domain/entities/post.dart';
 
@@ -64,7 +65,12 @@ class PostCard extends StatelessWidget {
               post.content,
               style: AppTypography.body.copyWith(color: palette.label),
             ),
-            if (post.hasCover) ...<Widget>[
+            // 两条配图路径：有真图走真图，否则回落到 emoji 占位。
+            // 顺序不能反 —— 有真图时 emoji 只作为加载兜底，不再单独占一块。
+            if (post.hasImages) ...<Widget>[
+              const SizedBox(height: AppSpacing.md),
+              _PostImages(images: post.images, caption: post.coverCaption),
+            ] else if (post.hasCover) ...<Widget>[
               const SizedBox(height: AppSpacing.md),
               _CoverPlaceholder(
                 emoji: post.coverEmoji!,
@@ -111,6 +117,7 @@ class _AuthorRow extends StatelessWidget {
       children: <Widget>[
         AppAvatar(
           seed: post.author.id,
+          imageUrl: post.author.avatarUrl,
           emoji: post.author.emoji,
           size: 42,
         ),
@@ -150,6 +157,122 @@ class _AuthorRow extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 真实配图（1~N 张）。
+///
+/// 布局按张数分档，不是简单等宽排开 —— 这是信息流配图的通用做法：
+///  - **1 张** → 16:10 通栏。单图给足面积，是内容的主角；
+///  - **2 张以上** → 1:1 方阵平铺，最多显示 [_maxVisible] 张。
+///
+/// 超出部分叠一个 `+N` 蒙层而不是静默截断：用户需要知道"还有更多"，
+/// 否则会误以为这条动态只有三张图。
+class _PostImages extends StatelessWidget {
+  const _PostImages({required this.images, this.caption});
+
+  final List<String> images;
+  final String? caption;
+
+  /// 最多同时显示几张。3 张是"一行放得下又不至于太窄"的上限，
+  /// 再多了单张宽度会低于可用点击区域的最小尺寸。
+  static const int _maxVisible = 3;
+
+  /// 图片蒙层色。刻意**不**走 `palette`：这是一层盖在照片上的遮罩，
+  /// 语义与主题无关（Apple 自家的照片叠层也是恒定黑），
+  /// 跟着亮暗模式变幻会让深色主题下的白底照片失去可读性。
+  static const Color _scrim = Color(0x8C000000);
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = context.palette;
+
+    final int visibleCount =
+        images.length > _maxVisible ? _maxVisible : images.length;
+    final int hiddenCount = images.length - visibleCount;
+
+    final Widget grid = visibleCount == 1
+        ? AspectRatio(
+            aspectRatio: 16 / 10,
+            child: _tile(context, 0, hiddenCount),
+          )
+        : Row(
+            children: <Widget>[
+              for (int i = 0; i < visibleCount; i++) ...<Widget>[
+                if (i > 0) const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: _tile(
+                      context,
+                      i,
+                      // 只有最后一张盖蒙层，否则每张都写 +N 会重复。
+                      i == visibleCount - 1 ? hiddenCount : 0,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        ClipRRect(
+          borderRadius: AppRadius.mdAll,
+          child: grid,
+        ),
+        if (caption != null) ...<Widget>[
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            caption!,
+            style: AppTypography.footnote.copyWith(color: palette.labelSecondary),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// 单块图。[hiddenCount] > 0 时叠 `+N` 蒙层。
+  Widget _tile(BuildContext context, int index, int hiddenCount) {
+    final AppPalette palette = context.palette;
+
+    final Widget image = AppNetworkImage(
+      url: images[index],
+      width: double.infinity,
+      height: double.infinity,
+      // 图片挂了也要占住位置，不能塌成 0 高度导致列表跳动。
+      fallback: ColoredBox(
+        color: palette.surfaceRaised,
+        child: Center(
+          child: Icon(
+            CupertinoIcons.photo,
+            size: 22,
+            color: palette.labelTertiary,
+          ),
+        ),
+      ),
+    );
+
+    if (hiddenCount <= 0) {
+      return image;
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        image,
+        ColoredBox(
+          color: _scrim,
+          child: Center(
+            child: Text(
+              '+$hiddenCount',
+              style: AppTypography.title2.copyWith(color: CupertinoColors.white),
+            ),
           ),
         ),
       ],

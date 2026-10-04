@@ -39,6 +39,7 @@ class ConversationTile extends StatelessWidget {
           children: <Widget>[
             AppAvatar(
               seed: conversation.id,
+              imageUrl: conversation.peerAvatarUrl,
               emoji: conversation.peerEmoji,
               size: 52,
               showOnlineDot: true,

@@ -9,6 +9,7 @@ class UserProfile {
     required this.handle,
     required this.bio,
     required this.joinedAt,
+    this.avatarUrl,
     this.emoji,
     this.location,
     this.postCount = 0,
@@ -29,6 +30,9 @@ class UserProfile {
   /// 加入时间。展示时用 `formatJoinDate` 转成"2026年3月加入"。
   final DateTime joinedAt;
 
+  /// 头像图片地址。为 `null` 时回落到 [emoji] 的渐变占位。
+  final String? avatarUrl;
+
   final String? emoji;
 
   final String? location;
@@ -44,12 +48,16 @@ class UserProfile {
 
   final bool isVerified;
 
+  /// 是否有真实头像可加载。UI 用这个决定走 `Image.network` 还是渐变占位。
+  bool get hasAvatar => avatarUrl != null && avatarUrl!.isNotEmpty;
+
   UserProfile copyWith({
     String? id,
     String? name,
     String? handle,
     String? bio,
     DateTime? joinedAt,
+    String? avatarUrl,
     String? emoji,
     String? location,
     int? postCount,
@@ -64,6 +72,7 @@ class UserProfile {
       handle: handle ?? this.handle,
       bio: bio ?? this.bio,
       joinedAt: joinedAt ?? this.joinedAt,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       emoji: emoji ?? this.emoji,
       location: location ?? this.location,
       postCount: postCount ?? this.postCount,
@@ -85,6 +94,7 @@ class UserProfile {
         other.handle == handle &&
         other.bio == bio &&
         other.joinedAt == joinedAt &&
+        other.avatarUrl == avatarUrl &&
         other.emoji == emoji &&
         other.location == location &&
         other.postCount == postCount &&
@@ -101,6 +111,7 @@ class UserProfile {
         handle,
         bio,
         joinedAt,
+        avatarUrl,
         emoji,
         location,
         postCount,

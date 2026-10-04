@@ -14,6 +14,7 @@ class Post {
     required this.author,
     required this.content,
     required this.createdAt,
+    this.images = const <String>[],
     this.coverEmoji,
     this.coverCaption,
     this.likeCount = 0,
@@ -30,6 +31,16 @@ class Post {
   final String content;
 
   final DateTime createdAt;
+
+  /// 配图地址列表（0~9 张）。
+  ///
+  /// 和 [coverEmoji] 是**两代方案并存**的关系：
+  ///  - [images] 不为空 → 用真实图片（`Image.network`，需要处理加载/失败三态）；
+  ///  - [images] 为空但 [coverEmoji] 有值 → 用 emoji 渐变占位，零网络依赖。
+  ///
+  /// 保留占位这条路不是偷懒：Mock 阶段网络不可靠，占位图永远能渲染出来，
+  /// 而真实图片一旦加载失败就是一整块空白。UI 层用 [hasImages] 决定走哪条。
+  final List<String> images;
 
   /// 配图占位字符。为空表示纯文字动态。
   ///
@@ -53,13 +64,21 @@ class Post {
   /// 话题标签。
   final List<String> topics;
 
+  /// 是否有真实配图。
+  bool get hasImages => images.isNotEmpty;
+
+  /// 是否有 emoji 占位配图。
   bool get hasCover => coverEmoji != null;
+
+  /// 首图地址。列表里用封面、详情页用全量，避免重复取下标。
+  String? get firstImage => images.isEmpty ? null : images.first;
 
   Post copyWith({
     String? id,
     Author? author,
     String? content,
     DateTime? createdAt,
+    List<String>? images,
     String? coverEmoji,
     bool clearCover = false,
     String? coverCaption,
@@ -74,6 +93,7 @@ class Post {
       author: author ?? this.author,
       content: content ?? this.content,
       createdAt: createdAt ?? this.createdAt,
+      images: images ?? this.images,
       coverEmoji: clearCover ? null : (coverEmoji ?? this.coverEmoji),
       coverCaption: clearCover ? null : (coverCaption ?? this.coverCaption),
       likeCount: likeCount ?? this.likeCount,
@@ -105,6 +125,9 @@ class Post {
         other.author == author &&
         other.content == content &&
         other.createdAt == createdAt &&
+        // 注意：List 字段**不能**用 `==`，两个内容相同的 List 是不同的对象。
+        // 漏掉这条会让 Riverpod 每次 copyWith 都判定"变了"，触发无意义的 rebuild。
+        listEquals(other.images, images) &&
         other.coverEmoji == coverEmoji &&
         other.coverCaption == coverCaption &&
         other.likeCount == likeCount &&
@@ -120,6 +143,7 @@ class Post {
         author,
         content,
         createdAt,
+        Object.hashAll(images),
         coverEmoji,
         coverCaption,
         likeCount,
@@ -130,5 +154,6 @@ class Post {
       );
 
   @override
-  String toString() => 'Post($id, ${author.name}, like=$likeCount)';
+  String toString() =>
+      'Post($id, ${author.name}, like=$likeCount, images=${images.length})';
 }

@@ -1,6 +1,7 @@
 import '../../../../core/constants/app_constants.dart';
 import '../../domain/entities/post.dart';
 import '../../domain/repositories/post_repository.dart';
+import '../mock/mock_authors.dart';
 import '../mock/mock_posts.dart';
 
 /// [PostRepository] 的内存实现。

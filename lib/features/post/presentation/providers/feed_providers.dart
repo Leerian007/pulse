@@ -120,6 +120,34 @@ class FeedNotifier extends AsyncNotifier<List<Post>> {
     }
   }
 
+  /// 评论数增减。
+  ///
+  /// 评论存在**另一个仓库**（`CommentRepository`）里，所以动态的
+  /// `commentCount` 不会自己跟着变，需要显式同步一次。
+  ///
+  /// 为什么把这个方法放在 feed 这边、而不是让两个仓库互相持有：
+  /// 跨仓库的一致性属于**业务编排**，放在 Notifier 层是明账；
+  /// 让 `MockCommentRepository` 去改 `MockPostRepository` 则会让 data 层
+  /// 互相认识，绕开依赖倒置，换真实后端时两边都得改。
+  ///
+  /// 只改本地数字，不产生网络请求 —— `commentCount` 是服务端算好的展示值，
+  /// 下一次拉取时会拿到准确数字。
+  void bumpCommentCount(String postId, {int delta = 1}) {
+    final List<Post>? latest = _current;
+    if (latest == null) {
+      // 动态流还没加载出来，没有可同步的对象，静默返回。
+      return;
+    }
+
+    state = AsyncData<List<Post>>(
+      _mapOne(latest, postId, (Post post) {
+        final int next = post.commentCount + delta;
+        // 与 `Post.toggleLike` 同样的下限保护。
+        return post.copyWith(commentCount: next < 0 ? 0 : next);
+      }),
+    );
+  }
+
   /// 不可变地替换列表中的某一条。
   ///
   /// 统一返回 `List.unmodifiable`：Riverpod 3 用 `==` 过滤更新，

@@ -9,6 +9,7 @@ class Conversation {
     required this.peerHandle,
     required this.lastMessage,
     required this.lastMessageAt,
+    this.peerAvatarUrl,
     this.peerEmoji,
     this.unreadCount = 0,
     this.isOnline = false,
@@ -20,6 +21,15 @@ class Conversation {
   final String peerName;
 
   final String peerHandle;
+
+  /// 对方头像地址。为 `null` 时回落到 [peerEmoji] 的渐变占位。
+  ///
+  /// ⚠️ 已知的模型瑕疵：`peerName` / `peerHandle` / `peerAvatarUrl` /
+  /// `peerEmoji` 这四个字段其实是 `Author` 的**重复存储**，
+  /// 理想形态是像 `ConversationModel.targetUser` 那样持有一个用户对象。
+  /// 现在这样是为了不改动 `chat` 对 `post` 的依赖方向（feature 之间不能互相 import）。
+  /// 真要治本，应该把用户实体提到 `core/domain/` 双方共用 —— 那是独立的一次重构。
+  final String? peerAvatarUrl;
 
   final String? peerEmoji;
 
@@ -38,10 +48,15 @@ class Conversation {
 
   bool get hasUnread => unreadCount > 0;
 
+  /// 是否有真实头像可加载。
+  bool get hasPeerAvatar =>
+      peerAvatarUrl != null && peerAvatarUrl!.isNotEmpty;
+
   Conversation copyWith({
     String? id,
     String? peerName,
     String? peerHandle,
+    String? peerAvatarUrl,
     String? peerEmoji,
     String? lastMessage,
     DateTime? lastMessageAt,
@@ -53,6 +68,7 @@ class Conversation {
       id: id ?? this.id,
       peerName: peerName ?? this.peerName,
       peerHandle: peerHandle ?? this.peerHandle,
+      peerAvatarUrl: peerAvatarUrl ?? this.peerAvatarUrl,
       peerEmoji: peerEmoji ?? this.peerEmoji,
       lastMessage: lastMessage ?? this.lastMessage,
       lastMessageAt: lastMessageAt ?? this.lastMessageAt,
@@ -74,6 +90,7 @@ class Conversation {
         other.id == id &&
         other.peerName == peerName &&
         other.peerHandle == peerHandle &&
+        other.peerAvatarUrl == peerAvatarUrl &&
         other.peerEmoji == peerEmoji &&
         other.lastMessage == lastMessage &&
         other.lastMessageAt == lastMessageAt &&
@@ -87,6 +104,7 @@ class Conversation {
         id,
         peerName,
         peerHandle,
+        peerAvatarUrl,
         peerEmoji,
         lastMessage,
         lastMessageAt,
@@ -96,5 +114,6 @@ class Conversation {
       );
 
   @override
-  String toString() => 'Conversation($id, $peerName, unread=$unreadCount)';
+  String toString() =>
+      'Conversation($id, $peerName, unread=$unreadCount, avatar=${hasPeerAvatar ? "yes" : "no"})';
 }

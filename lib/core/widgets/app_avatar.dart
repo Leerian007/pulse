@@ -1,20 +1,27 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'app_network_image.dart';
 
 /// 头像。
 ///
-/// 现阶段没有真实的图片资源，所以用「**稳定派生渐变 + Emoji**」作为占位：
+/// 两种渲染路径，按 [imageUrl] 自动选择：
+///  - **有 URL** → `Image.network`，加载中与加载失败都回落到下面这套占位；
+///  - **无 URL** → 「稳定派生渐变 + Emoji」占位。
+///
+/// 占位方案本身是有意为之，不是"暂时糊一下"：
 ///  - 不需要任何 assets，Mock 数据里只存一个 emoji 字符串；
 ///  - 同一个 [seed] 永远得到同一组渐变色，视觉上像"有真实头像"；
 ///  - 比灰色方块 / 首字母圆形更不像"加载失败"。
 ///
-/// 将来接真实图片时，只需要在这里加一个 `CachedNetworkImage` 分支，
-/// 所有用到头像的页面（动态流、会话列表、个人主页）自动生效。
+/// 保留这条降级路径还有个工程上的理由：Mock 阶段网络并不可靠，
+/// 一旦所有头像都有 URL，这条分支就再也不会被真实渲染到，
+/// 等于悄悄烂掉。所以种子数据里的"当前用户"刻意不带头像 URL。
 class AppAvatar extends StatelessWidget {
   const AppAvatar({
     super.key,
     required this.seed,
+    this.imageUrl,
     this.emoji,
     this.size = 44,
     this.showOnlineDot = false,
@@ -23,6 +30,9 @@ class AppAvatar extends StatelessWidget {
 
   /// 稳定的派生种子，通常传用户 id。
   final String seed;
+
+  /// 真实头像地址。为空时直接走渐变占位。
+  final String? imageUrl;
 
   /// 头像主体字符。为空时按 [seed] 从内置表情池里取一个。
   final String? emoji;
@@ -66,28 +76,8 @@ class AppAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = context.palette;
-    final int hash = _stableHash(seed);
-    final List<Color> gradient = _gradients[hash % _gradients.length];
-    final String glyph = emoji ?? _emojiPool[hash % _emojiPool.length];
 
-    final Widget avatar = Container(
-      width: size,
-      height: size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: gradient,
-        ),
-      ),
-      child: Text(
-        glyph,
-        // Emoji 的视觉重心比字号小，0.5 是经验上比较稳的比例。
-        style: TextStyle(fontSize: size * 0.5, height: 1),
-      ),
-    );
+    final Widget avatar = _buildAvatar();
 
     if (!showOnlineDot) {
       return avatar;
@@ -117,6 +107,55 @@ class AppAvatar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 按有无 [imageUrl] 选择渲染路径。
+  Widget _buildAvatar() {
+    if (imageUrl == null || imageUrl!.isEmpty) {
+      return _buildFallback();
+    }
+
+    // ClipOval 而不是 Container 的 shape: circle —— 后者只影响 decoration，
+    // 不会裁掉 child（图片会溢出成方的）。
+    return ClipOval(
+      child: AppNetworkImage(
+        url: imageUrl!,
+        width: size,
+        height: size,
+        // 加载中 / 失败都用渐变占位，头像永远不会变成空白圈。
+        fallback: _buildFallback(),
+      ),
+    );
+  }
+
+  /// 「稳定派生渐变 + Emoji」占位。
+  ///
+  /// 它同时承担两个角色：没有头像 URL 时的正式外观，以及有 URL 时的
+  /// 加载中 / 加载失败兜底。刻意复用同一份实现 —— 两种角色画得不一样的话，
+  /// 图片加载完成的一瞬间会有明显的视觉跳变。
+  Widget _buildFallback() {
+    final int hash = _stableHash(seed);
+    final List<Color> gradient = _gradients[hash % _gradients.length];
+    final String glyph = emoji ?? _emojiPool[hash % _emojiPool.length];
+
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: gradient,
+        ),
+      ),
+      child: Text(
+        glyph,
+        // Emoji 的视觉重心比字号小，0.5 是经验上比较稳的比例。
+        style: TextStyle(fontSize: size * 0.5, height: 1),
       ),
     );
   }

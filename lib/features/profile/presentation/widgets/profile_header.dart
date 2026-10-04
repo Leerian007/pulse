@@ -43,6 +43,7 @@ class ProfileHeader extends StatelessWidget {
         children: <Widget>[
           AppAvatar(
             seed: profile.id,
+            imageUrl: profile.avatarUrl,
             emoji: profile.emoji,
             size: 84,
           ),

@@ -1,17 +1,23 @@
+import '../../../../core/mock/mock_data_service.dart';
 import '../../domain/entities/conversation.dart';
 import '../../domain/entities/message.dart';
 
 /// 会话与消息的 Mock 种子数据。
 ///
-/// 时间一律相对 `now` 计算，保证演示/截图时显示的永远是"3 分钟前"。
+/// 时间一律相对锚点计算，保证演示/截图时显示的永远是"3 分钟前"。
+///
+/// 会话 id 与对方用户 id 的对应关系是 `c_<handle>` ↔ `u_<handle>`。
+/// 头像 URL 直接由用户 id 派生，所以这里改了名字/头像，
+/// `chat` 与 `post` 两边不会出现"同一个人两张脸"。
 List<Conversation> buildSeedConversations({DateTime? now}) {
-  final DateTime anchor = now ?? DateTime.now();
+  final DateTime anchor = MockDataService.anchorNow(now: now);
 
   return <Conversation>[
     Conversation(
       id: 'c_lin',
       peerName: '林深',
       peerHandle: 'linshen',
+      peerAvatarUrl: MockDataService.avatarUrl('u_lin'),
       peerEmoji: '🦊',
       lastMessage: '那个桌面的照片我存下来了，谢谢',
       lastMessageAt: anchor.subtract(const Duration(minutes: 3)),
@@ -22,6 +28,7 @@ List<Conversation> buildSeedConversations({DateTime? now}) {
       id: 'c_an',
       peerName: '阿南',
       peerHandle: 'anan',
+      peerAvatarUrl: MockDataService.avatarUrl('u_an'),
       peerEmoji: '🌿',
       lastMessage: '柠檬树今年应该还能再结一批',
       lastMessageAt: anchor.subtract(const Duration(minutes: 47)),
@@ -32,6 +39,7 @@ List<Conversation> buildSeedConversations({DateTime? now}) {
       id: 'c_zhou',
       peerName: '周迟',
       peerHandle: 'zhouchi',
+      peerAvatarUrl: MockDataService.avatarUrl('u_zhou'),
       peerEmoji: '🐳',
       lastMessage: '你说得对，骨架屏确实比转圈好',
       lastMessageAt: anchor.subtract(const Duration(hours: 4)),
@@ -40,6 +48,7 @@ List<Conversation> buildSeedConversations({DateTime? now}) {
       id: 'c_qi',
       peerName: '祁七',
       peerHandle: 'qiqi',
+      peerAvatarUrl: MockDataService.avatarUrl('u_qi'),
       peerEmoji: '🪐',
       lastMessage: '清单我整理好了，回头发你',
       lastMessageAt: anchor.subtract(const Duration(days: 1, hours: 2)),
@@ -49,6 +58,7 @@ List<Conversation> buildSeedConversations({DateTime? now}) {
       id: 'c_mu',
       peerName: '木也',
       peerHandle: 'muye',
+      peerAvatarUrl: MockDataService.avatarUrl('u_mu'),
       peerEmoji: '☕️',
       lastMessage: '下次带你喝一支浅烘的',
       lastMessageAt: anchor.subtract(const Duration(days: 2, hours: 5)),
@@ -58,6 +68,8 @@ List<Conversation> buildSeedConversations({DateTime? now}) {
       id: 'c_shen',
       peerName: '沈迟',
       peerHandle: 'shenchi',
+      // 和 `mock_authors.shen` 保持一致：全站唯一没有头像的用户，
+      // 用来保证 `AppAvatar` 的 emoji 降级分支有真实渲染路径。
       peerEmoji: '🎧',
       lastMessage: '歌单链接发你了',
       lastMessageAt: anchor.subtract(const Duration(days: 6)),
