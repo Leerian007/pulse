@@ -1,4 +1,6 @@
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/mock/mock_data_service.dart';
+import '../../domain/entities/author.dart';
 import '../../domain/entities/post.dart';
 import '../../domain/repositories/post_repository.dart';
 import '../mock/mock_authors.dart';
@@ -23,6 +25,13 @@ class MockPostRepository implements PostRepository {
   late final List<Post> _store = buildSeedPosts();
 
   int _seq = 0;
+
+  /// "我是谁"在 Mock 里就是一个常量。
+  ///
+  /// 换成真实后端时这里会变成"从内存里的 session 读用户"，
+  /// 而**接口签名不变** —— 这正是把它做成同步 getter 的意义。
+  @override
+  Author get currentAuthor => currentUser;
 
   @override
   Future<List<Post>> fetchFeed({int page = 0, int pageSize = 20}) async {
@@ -59,17 +68,28 @@ class MockPostRepository implements PostRepository {
   }
 
   @override
-  Future<Post> create({required String content, String? coverEmoji}) async {
+  Future<Post> create({
+    required String content,
+    List<String> images = const <String>[],
+    List<String> topics = const <String>[],
+    String? coverEmoji,
+  }) async {
     await _delay();
 
     _seq++;
     final Post post = Post(
-      id: 'p_local_$_seq',
+      // 走 `MockDataService.localId` 而不是 `'p_$_seq'`：同一微秒内连续发两条
+      // 也不会撞 id（时间戳 + 序号双保险），而且 id 里的 `_local_` 片段能在
+      // 日志里一眼认出"这条是本地生成的"。
+      id: MockDataService.localId('p', seq: _seq),
       author: currentUser,
       content: content,
       createdAt: DateTime.now(),
+      // 复制一份而不是直接引用调用方传进来的列表：面板里的 `_images` 是可变的，
+      // 直接共享引用会让"发布完之后继续往草稿里加图"悄悄改掉已经发出去的动态。
+      images: List<String>.unmodifiable(images),
+      topics: List<String>.unmodifiable(topics),
       coverEmoji: coverEmoji,
-      topics: const <String>['新动态'],
     );
     // 新发布的排在最前面，和真实信息流的排序一致。
     _store.insert(0, post);

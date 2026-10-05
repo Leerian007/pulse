@@ -95,6 +95,75 @@ void main() {
     });
   });
 
+  group('MockPostRepository.currentAuthor', () {
+    test('就是种子数据里的当前用户', () {
+      final repo = buildRepo();
+
+      expect(repo.currentAuthor.id, 'u_me');
+      expect(repo.currentAuthor.name, isNotEmpty);
+    });
+
+    test('同一个实例反复读拿到的是同一个人', () {
+      final repo = buildRepo();
+      expect(repo.currentAuthor, repo.currentAuthor);
+    });
+  });
+
+  group('MockPostRepository.create 支持配图与话题', () {
+    test('配图与话题会原样写进新建的动态', () async {
+      final repo = buildRepo();
+      final created = await repo.create(
+        content: '带图和话题的动态',
+        images: const <String>['https://picsum.photos/seed/a/900/900'],
+        topics: const <String>['测试', '配图'],
+      );
+
+      expect(created.images, <String>['https://picsum.photos/seed/a/900/900']);
+      expect(created.topics, <String>['测试', '配图']);
+      // 新建的动态还没被点赞，计数也从 0 开始 —— 不能沿用种子里某个人的数字。
+      expect(created.likeCount, 0);
+      expect(created.likedByMe, isFalse);
+    });
+
+    test('不传配图与话题时是空列表，而不是 null 或报错', () async {
+      final repo = buildRepo();
+      final created = await repo.create(content: '纯文字');
+
+      expect(created.images, isEmpty);
+      expect(created.topics, isEmpty);
+      expect(created.hasCover, isFalse);
+    });
+
+    test('复制外部列表：发布之后再改草稿不会污染已发出的动态', () async {
+      // 这是最隐蔽的一类 bug：面板里的 `_images` 是可变的，
+      // 如果这里直接存引用，"发完继续加图"会把已经发出去的动态也改掉。
+      final repo = buildRepo();
+      final List<String> images = <String>['https://picsum.photos/seed/a/900/900'];
+      final List<String> topics = <String>['咖啡'];
+
+      final created = await repo.create(
+        content: '一条动态',
+        images: images,
+        topics: topics,
+      );
+
+      images.add('https://picsum.photos/seed/b/900/900');
+      topics.add('茶');
+
+      expect(created.images, hasLength(1));
+      expect(created.topics, <String>['咖啡']);
+    });
+
+    test('id 带 `_local_` 片段，便于识别"还没落库"的条目', () async {
+      final repo = buildRepo();
+      final first = await repo.create(content: 'A');
+      final second = await repo.create(content: 'B');
+
+      expect(first.id, contains('_local_'));
+      expect(first.id, isNot(second.id));
+    });
+  });
+
   group('每个实例状态独立', () {
     test('一个实例的点赞不会影响另一个实例', () async {
       final a = buildRepo();

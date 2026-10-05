@@ -3,21 +3,22 @@ import 'package:flutter/cupertino.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/date_format.dart';
 import '../../../../core/widgets/app_avatar.dart';
-import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/widgets/pressable.dart';
 import '../../domain/entities/post.dart';
+import 'post_image_grid.dart';
 
 /// 动态卡片。
 ///
 /// 视觉拆解（自上而下）：
 ///  1. 作者行：头像 + 昵称（含认证标记）+ `@handle · 时间`；
 ///  2. 正文：17pt / 行高 1.29，这是 Apple 正文的标准观感；
-///  3. 配图占位：16:10 圆角块 + Emoji + 说明文字；
+///  3. 配图：真图走 [PostImageGrid]（见那里的九宫格排布说明），
+///     没有真图时回落到 emoji 渐变占位；
 ///  4. 话题胶囊：accentSoft 底 + accent 字，11pt；
-///  5. 操作栏：点赞（乐观更新）/ 评论 / 转发 / 分享。
+///  5. 操作栏：点赞（心跳动画）/ 评论 / 转发 / 分享。
 ///
-/// 交互上只做了一件事：**整卡可按下 + 点赞即时变色**。
-/// 卡片的 `onTap` 预留给了下一阶段的详情页路由。
+/// 交互上做了两件事：**整卡可按下** + **点赞即时变色并跳一下**。
+/// 卡片的 `onTap` 预留给了详情页路由。
 class PostCard extends StatelessWidget {
   const PostCard({
     super.key,
@@ -69,7 +70,7 @@ class PostCard extends StatelessWidget {
             // 顺序不能反 —— 有真图时 emoji 只作为加载兜底，不再单独占一块。
             if (post.hasImages) ...<Widget>[
               const SizedBox(height: AppSpacing.md),
-              _PostImages(images: post.images, caption: post.coverCaption),
+              PostImageGrid(images: post.images, caption: post.coverCaption),
             ] else if (post.hasCover) ...<Widget>[
               const SizedBox(height: AppSpacing.md),
               _CoverPlaceholder(
@@ -157,122 +158,6 @@ class _AuthorRow extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// 真实配图（1~N 张）。
-///
-/// 布局按张数分档，不是简单等宽排开 —— 这是信息流配图的通用做法：
-///  - **1 张** → 16:10 通栏。单图给足面积，是内容的主角；
-///  - **2 张以上** → 1:1 方阵平铺，最多显示 [_maxVisible] 张。
-///
-/// 超出部分叠一个 `+N` 蒙层而不是静默截断：用户需要知道"还有更多"，
-/// 否则会误以为这条动态只有三张图。
-class _PostImages extends StatelessWidget {
-  const _PostImages({required this.images, this.caption});
-
-  final List<String> images;
-  final String? caption;
-
-  /// 最多同时显示几张。3 张是"一行放得下又不至于太窄"的上限，
-  /// 再多了单张宽度会低于可用点击区域的最小尺寸。
-  static const int _maxVisible = 3;
-
-  /// 图片蒙层色。刻意**不**走 `palette`：这是一层盖在照片上的遮罩，
-  /// 语义与主题无关（Apple 自家的照片叠层也是恒定黑），
-  /// 跟着亮暗模式变幻会让深色主题下的白底照片失去可读性。
-  static const Color _scrim = Color(0x8C000000);
-
-  @override
-  Widget build(BuildContext context) {
-    final AppPalette palette = context.palette;
-
-    final int visibleCount =
-        images.length > _maxVisible ? _maxVisible : images.length;
-    final int hiddenCount = images.length - visibleCount;
-
-    final Widget grid = visibleCount == 1
-        ? AspectRatio(
-            aspectRatio: 16 / 10,
-            child: _tile(context, 0, hiddenCount),
-          )
-        : Row(
-            children: <Widget>[
-              for (int i = 0; i < visibleCount; i++) ...<Widget>[
-                if (i > 0) const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: _tile(
-                      context,
-                      i,
-                      // 只有最后一张盖蒙层，否则每张都写 +N 会重复。
-                      i == visibleCount - 1 ? hiddenCount : 0,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        ClipRRect(
-          borderRadius: AppRadius.mdAll,
-          child: grid,
-        ),
-        if (caption != null) ...<Widget>[
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            caption!,
-            style: AppTypography.footnote.copyWith(color: palette.labelSecondary),
-          ),
-        ],
-      ],
-    );
-  }
-
-  /// 单块图。[hiddenCount] > 0 时叠 `+N` 蒙层。
-  Widget _tile(BuildContext context, int index, int hiddenCount) {
-    final AppPalette palette = context.palette;
-
-    final Widget image = AppNetworkImage(
-      url: images[index],
-      width: double.infinity,
-      height: double.infinity,
-      // 图片挂了也要占住位置，不能塌成 0 高度导致列表跳动。
-      fallback: ColoredBox(
-        color: palette.surfaceRaised,
-        child: Center(
-          child: Icon(
-            CupertinoIcons.photo,
-            size: 22,
-            color: palette.labelTertiary,
-          ),
-        ),
-      ),
-    );
-
-    if (hiddenCount <= 0) {
-      return image;
-    }
-
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        image,
-        ColoredBox(
-          color: _scrim,
-          child: Center(
-            child: Text(
-              '+$hiddenCount',
-              style: AppTypography.title2.copyWith(color: CupertinoColors.white),
-            ),
           ),
         ),
       ],
@@ -379,6 +264,10 @@ class _TopicChip extends StatelessWidget {
 }
 
 /// 操作栏：点赞 / 评论 / 转发 / 分享。
+///
+/// 点赞单独拆成 [_LikeButton]，因为它是唯一一个**带状态动效**的按钮；
+/// 其余三个共用通用的 [_ActionButton]。把动效塞进通用按钮会让每个按钮都背上
+/// 一个用不到的 AnimationController。
 class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.post,
@@ -409,30 +298,25 @@ class _ActionBar extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Row(
           children: <Widget>[
-            _ActionButton(
-              icon: CupertinoIcons.heart,
-              activeIcon: CupertinoIcons.heart_fill,
+            _LikeButton(
+              liked: post.likedByMe,
               count: post.likeCount,
-              active: post.likedByMe,
-              activeColor: palette.like,
+              color: palette.like,
               onTap: onLike,
             ),
             _ActionButton(
               icon: CupertinoIcons.chat_bubble,
               count: post.commentCount,
-              activeColor: palette.accent,
               onTap: onComment,
             ),
             _ActionButton(
               icon: CupertinoIcons.arrow_2_squarepath,
               count: post.repostCount,
-              activeColor: palette.success,
               onTap: onRepost,
             ),
             const Spacer(),
             _ActionButton(
               icon: CupertinoIcons.share,
-              activeColor: palette.accent,
               onTap: onShare,
             ),
           ],
@@ -442,28 +326,71 @@ class _ActionBar extends StatelessWidget {
   }
 }
 
+/// 「图标 + 计数」。
+///
+/// 抽出来是为了让点赞按钮和普通按钮**共用同一套排版**：点赞多出来的只是
+/// 外面那层心跳缩放，排版本身不该有第二份实现 —— 否则两个按钮的
+/// 图标尺寸、间距会慢慢漂移。
+class _ActionLabel extends StatelessWidget {
+  const _ActionLabel({
+    required this.color,
+    this.icon,
+    this.count,
+    this.leading,
+  }) : assert(
+          icon != null || leading != null,
+          '_ActionLabel 至少要有一个图标：要么给 icon，要么给 leading。',
+        );
+
+  final Color color;
+
+  /// 默认图标。用 [leading] 自定义渲染时可以不传。
+  final IconData? icon;
+
+  /// 为 `null` 或 0 时不显示数字（分享按钮就永远不显示）。
+  final int? count;
+
+  /// 替换默认图标的自定义内容。点赞用它把 `AnimatedSwitcher` 塞进来。
+  final Widget? leading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        leading ?? Icon(icon, size: 18, color: color),
+        if (count != null && count! > 0) ...<Widget>[
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            formatCount(count!),
+            // 等宽数字：计数从 9 → 10 时不会把整行挤动。
+            style: AppTypography.tabularNumber.copyWith(color: color),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// 通用操作按钮（评论 / 转发 / 分享）。
+///
+/// 它**没有**配色参数：这三个按钮都没有"激活"态，永远用三级灰。
+/// 留着 `color` 参数只会让人以为可以给按钮上色，而实际上传进来的值
+/// 在任何分支里都用不到 —— 那种"参数只是装饰"的接口比没有参数更糟。
 class _ActionButton extends StatelessWidget {
   const _ActionButton({
     required this.icon,
-    this.activeIcon,
     this.count,
-    this.active = false,
-    required this.activeColor,
     this.onTap,
   });
 
   final IconData icon;
-  final IconData? activeIcon;
   final int? count;
-  final bool active;
-  final Color activeColor;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final AppPalette palette = context.palette;
-    final Color color = active ? activeColor : palette.labelTertiary;
-    final IconData glyph = active && activeIcon != null ? activeIcon! : icon;
 
     return Pressable(
       onTap: onTap,
@@ -474,12 +401,126 @@ class _ActionButton extends StatelessWidget {
           horizontal: AppSpacing.sm,
           vertical: AppSpacing.xs,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            // AnimatedSwitcher 让"空心 → 实心"有一个缩放弹跳，
-            // 而不是干巴巴地换一个图标 —— 点赞是这套 UI 里最需要"情绪"的动作。
-            AnimatedSwitcher(
+        child: _ActionLabel(
+          icon: icon,
+          count: count,
+          color: palette.labelTertiary,
+        ),
+      ),
+    );
+  }
+}
+
+/// 点赞按钮：**心跳动画**。
+///
+/// ## 为什么值得为它单独写一个 StatefulWidget
+///
+/// 点赞是整个 App 里情绪最强的动作，也是唯一一个"做对了会被夸"的细节。
+/// 空心 → 实心的图标切换（`AnimatedSwitcher`）只是及格线；真正让人觉得
+/// "这 App 好用"的是那一下心跳。
+///
+/// ## 曲线为什么是四段而不是 `Curves.elasticOut`
+///
+/// `elasticOut` 是**连续振荡**，观感像橡皮筋；真实的心跳是"咚、咚"两下：
+/// 猛地放大 → 回落过头 → 再弹一点 → 归位。所以用 `TweenSequence` 手写。
+///
+/// ## 只在"没赞 → 赞"时跳
+///
+/// 取消点赞不播动画 —— 撤销一个动作不该有庆祝感。而且乐观更新失败回滚时
+/// 走的也是"已赞 → 没赞"这条路径，如果这里也播，用户会看到心莫名其妙地
+/// 跳一下然后变灰。
+class _LikeButton extends StatefulWidget {
+  const _LikeButton({
+    required this.liked,
+    required this.count,
+    required this.color,
+    this.onTap,
+  });
+
+  final bool liked;
+  final int count;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  State<_LikeButton> createState() => _LikeButtonState();
+}
+
+class _LikeButtonState extends State<_LikeButton>
+    with SingleTickerProviderStateMixin {
+  /// 心跳总时长。再长一点就"拖沓"了 —— 高频动作的动效必须收得干脆。
+  static const Duration _pulseDuration = Duration(milliseconds: 420);
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: _pulseDuration,
+  );
+
+  /// 四段心跳曲线，`weight` 之和为 100。
+  late final Animation<double> _pulse = TweenSequence<double>(
+    <TweenSequenceItem<double>>[
+      // 猛地放大
+      TweenSequenceItem<double>(
+        tween: Tween<double>(begin: 1, end: 1.3)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 20,
+      ),
+      // 回落并缩过头
+      TweenSequenceItem<double>(
+        tween: Tween<double>(begin: 1.3, end: 0.92)
+            .chain(CurveTween(curve: Curves.easeInCubic)),
+        weight: 26,
+      ),
+      // 回弹
+      TweenSequenceItem<double>(
+        tween: Tween<double>(begin: 0.92, end: 1.06)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 28,
+      ),
+      // 归位
+      TweenSequenceItem<double>(
+        tween: Tween<double>(begin: 1.06, end: 1)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 26,
+      ),
+    ],
+  ).animate(_controller);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LikeButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.liked && widget.liked) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppPalette palette = context.palette;
+    final Color color = widget.liked ? widget.color : palette.labelTertiary;
+
+    return Pressable(
+      onTap: widget.onTap,
+      scale: 0.88,
+      borderRadius: AppRadius.pillAll,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        // 整个"心 + 计数"一起缩放：心脏带动数字一起跳，比只缩图标更有整体感。
+        child: ScaleTransition(
+          scale: _pulse,
+          child: _ActionLabel(
+            count: widget.count,
+            color: color,
+            leading: AnimatedSwitcher(
               duration: AppDuration.fast,
               switchInCurve: AppCurves.spring,
               transitionBuilder: (Widget child, Animation<double> animation) {
@@ -489,21 +530,15 @@ class _ActionButton extends StatelessWidget {
                 );
               },
               child: Icon(
-                glyph,
-                key: ValueKey<bool>(active),
+                widget.liked ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+                // key 必须跟着状态变，否则 AnimatedSwitcher 认为"还是同一个
+                // widget"，不会播过渡 —— 图标会瞬间替换。
+                key: ValueKey<bool>(widget.liked),
                 size: 18,
                 color: color,
               ),
             ),
-            if (count != null && count! > 0) ...<Widget>[
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                formatCount(count!),
-                // 等宽数字：计数从 9 → 10 时不会把整行挤动。
-                style: AppTypography.tabularNumber.copyWith(color: color),
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );

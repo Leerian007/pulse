@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/riverpod/async_value_ext.dart';
 import '../../data/repositories/mock_post_repository.dart';
+import '../../domain/entities/author.dart';
 import '../../domain/entities/post.dart';
 import '../../domain/repositories/post_repository.dart';
 
@@ -23,6 +24,18 @@ import '../../domain/repositories/post_repository.dart';
 final Provider<PostRepository> postRepositoryProvider =
     Provider<PostRepository>((ref) => MockPostRepository());
 
+/// 当前登录用户。
+///
+/// 转发自仓库的 `currentAuthor`，作用是让 UI 不必认识任何 data 层实现就能
+/// 回答"我是谁"：发帖面板要显示"发到谁的主页"，乐观发布要拼出一条带作者的
+/// 本地 `Post`。
+///
+/// 注意它不是 `AsyncValue` —— 会话信息在真实后端里也是本地缓存的，
+/// 不该为"我是谁"再走一次网络（理由见 `PostRepository.currentAuthor`）。
+final Provider<Author> currentAuthorProvider = Provider<Author>(
+  (ref) => ref.watch(postRepositoryProvider).currentAuthor,
+);
+
 /// 动态流状态机。
 ///
 /// 用 `AsyncNotifier` 而不是 `FutureProvider`：因为除了"读"，还需要"写"——
@@ -38,6 +51,20 @@ class FeedNotifier extends AsyncNotifier<List<Post>> {
 
   /// 当前列表。用模式匹配取值，见 `async_value_ext.dart` 里的说明。
   List<Post>? get _current => state.dataOrNull;
+
+  /// 本地占位条目的序号。
+  ///
+  /// 必须**每个 Notifier 实例一份**，而不是全局自增：全局计数器会让测试之间
+  /// 互相影响（同一个用例第二次跑拿到不同的 id，断言就没法写了）。
+  int _localSeq = 0;
+
+  /// 生成一个本地占位 id。
+  ///
+  /// 刻意带上 `_local_` 与 `_pending_` 两个片段：
+  ///  - `_local_` 与 `MockDataService.localId` 的约定一致，表示"还没落库"；
+  ///  - `_pending_` 更进一步，表示"连服务端都还没确认"，方便在日志里区分
+  ///    "乐观插入的幽灵条目"和"已经拿到 id 的真实条目"。
+  String _nextPlaceholderId() => 'p_local_pending_${++_localSeq}';
 
   /// 下拉刷新 / 重试。
   ///
@@ -100,22 +127,84 @@ class FeedNotifier extends AsyncNotifier<List<Post>> {
   }
 
   /// 发布新动态。成功后插到队首，用户能立刻在流里看到自己刚发的内容。
-  Future<Post?> publish({required String content, String? coverEmoji}) async {
+  ///
+  /// ## 为什么这里可以乐观，而评论那边不行
+  ///
+  /// 乐观更新需要一个**完整的实体**，而 `Post` 必须带 `author`。
+  /// 作者身份属于数据层（"我是谁"来自会话，UI 自己拼不出来），所以这里只能从
+  /// [PostRepository.currentAuthor] 取。评论那边没有这个入口，于是只能等 ——
+  /// 两边策略不一致的原因就是这一条，不是随手取舍。
+  ///
+  /// ## 三步走的顺序很重要
+  ///
+  /// 1. **先插一条本地占位**（id 里带 `_pending_`）：用户按下"发布"的瞬间，
+  ///    流里就已经有这条动态了。面板随后关闭，露出来的就是它。
+  /// 2. 再用服务端返回的**权威实体替换**占位条目 —— 拿到真正的 id 与时间。
+  /// 3. 失败则**撤回**占位条目，返回 `null`，由面板提示用户重试。
+  ///
+  /// 为什么敢在第 1 步就上屏：这条动态的内容完全由本地决定，没有任何
+  /// "服务端才知道"的信息需要等待。这也是点赞能乐观的同一个理由。
+  Future<Post?> publish({
+    required String content,
+    List<String> images = const <String>[],
+    List<String> topics = const <String>[],
+    String? coverEmoji,
+  }) async {
+    final List<Post>? snapshot = _current;
+    // 列表还没加载出来时不做乐观插入 —— 没有"队首"可以插，而且
+    // 把一个错误态/加载态直接翻成"只有一条动态的数据态"是错的。
+    final String? placeholderId = snapshot == null ? null : _nextPlaceholderId();
+
+    if (snapshot != null) {
+      final Post placeholder = Post(
+        id: placeholderId!,
+        author: ref.read(postRepositoryProvider).currentAuthor,
+        content: content,
+        createdAt: DateTime.now(),
+        images: List<String>.unmodifiable(images),
+        topics: List<String>.unmodifiable(topics),
+        coverEmoji: coverEmoji,
+      );
+      state = AsyncData<List<Post>>(
+        List<Post>.unmodifiable(<Post>[placeholder, ...snapshot]),
+      );
+    }
+
     try {
-      final Post created = await ref
-          .read(postRepositoryProvider)
-          .create(content: content, coverEmoji: coverEmoji);
+      final Post created = await ref.read(postRepositoryProvider).create(
+            content: content,
+            images: images,
+            topics: topics,
+            coverEmoji: coverEmoji,
+          );
 
       if (!ref.mounted) {
         return created;
       }
 
-      final List<Post>? latest = _current;
-      if (latest != null) {
-        state = AsyncData<List<Post>>(<Post>[created, ...latest]);
+      if (placeholderId != null) {
+        // 把占位换成权威实体，并挪回队首 —— 与服务端一致
+        // （`MockPostRepository.create` 也是插在 0）。
+        final List<Post> latest = _current ?? const <Post>[];
+        state = AsyncData<List<Post>>(
+          List<Post>.unmodifiable(<Post>[
+            created,
+            ...latest.where((Post post) => post.id != placeholderId),
+          ]),
+        );
       }
       return created;
     } catch (_) {
+      if (ref.mounted && placeholderId != null) {
+        // 撤回占位条目。用户看到"自己刚发的那条"消失，配合面板上的错误提示，
+        // 语义是自洽的（而不是留一条永远发不出去的幽灵动态）。
+        final List<Post> latest = _current ?? const <Post>[];
+        state = AsyncData<List<Post>>(
+          List<Post>.unmodifiable(<Post>[
+            ...latest.where((Post post) => post.id != placeholderId),
+          ]),
+        );
+      }
       return null;
     }
   }
